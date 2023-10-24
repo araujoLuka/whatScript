@@ -14,7 +14,7 @@ dataPath = r'C:\\Program Files (x86)\\whatScript\\data\\'
 limiteMensagens = 200
 introducao = "Programa WhatScript \n" + \
 "- Autor: Lucas Araujo \n" + \
-"- Versao: 1.3 \n" + \
+"- Versao: 1.3.1 \n" + \
 "\n" + \
 "> Envio de mensagens automáticas via WhatsApp \n" + \
 "- Limite: " + str(limiteMensagens) + "\n"
@@ -77,6 +77,7 @@ def salvaContador(contador: int, fPath:str = contPath):
         f.write(log)
 
 def salvarPlanilha(updated: tuple):        
+    print("Atualizando planilha...")
     workbook = load_workbook(fileName)
     sheet = workbook.active
 
@@ -85,6 +86,7 @@ def salvarPlanilha(updated: tuple):
     sheet['C' + str(linha + 2)] = valor
 
     workbook.save(fileName)
+    print("Planilha atualizada!")
 
 def geraLog(element):
     now = datetime.now()
@@ -130,8 +132,51 @@ def geraLogErro(element: Exception):
         f.write('\n')
         f.write(log)
         
-def enviarMensagem():
-    pass
+def enviarMensagem() -> int:
+    numero = df.loc[linha, "PHONE"]
+    
+    if df.loc[linha, "ENVIADOS"] == "ok":
+        #print("Numero", numero, "ja recebeu uma mensagem!")
+        return -1
+    
+    print("[Cliente {}]".format(linha+1), "Enviando mensagem para numero:", numero)
+    
+    nome = df.loc[linha, "NAME"]
+
+    texto = parse.quote(f"{mensagem}")
+
+    link = f"https://web.whatsapp.com/send?phone={numero}&text={texto}"
+
+    nav.get(link)
+
+    while len(nav.find_elements(By.ID, "side")) < 1:
+        time.sleep(1)
+    time.sleep(2)
+    
+    
+    if not len(nav.find_elements(By.XPATH, '//*[@id="app"]/div/span[2]/div/span/div/div/div/div/div/div[1]')) < 1:
+        df.loc[linha, "ENVIADOS"] = str("falhou")
+        updated = (linha, "falhou")
+                    
+        salvarPlanilha(updated)
+        
+        geraLog(df.loc[linha, :].values.flatten().tolist())
+        
+        if linha == len(df.index)-1:
+            print("Fim da lista")
+            return -3
+            
+        return -2
+        
+    nav.find_element(By.XPATH, '//*[@id="main"]/footer/div[1]/div/span[2]/div/div[2]/div[2]/button/span').click()
+    df.loc[linha, "ENVIADOS"] = str("ok")
+    updated = (linha, "ok")
+    
+    salvarPlanilha(updated)
+    
+    geraLog(df.loc[linha, :].values.flatten().tolist())
+    
+    return 0
 
 print(introducao)
 
@@ -199,69 +244,29 @@ contadorMensagensEnviadas: int = 0
 
 updated: tuple = ()
 
-try:
-    for linha in df.index:
-        numero = df.loc[linha, "PHONE"]
-        
-        if df.loc[linha, "ENVIADOS"] == "ok":
-            #print("Numero", numero, "ja recebeu uma mensagem!")
-            continue
-        
-        print("Enviado mensagem para numero:", numero)
-        
-        nome = df.loc[linha, "NAME"]
-
-        texto = parse.quote(f"{mensagem}")
-
-        link = f"https://web.whatsapp.com/send?phone={numero}&text={texto}"
-
-        nav.get(link)
-
-        while len(nav.find_elements(By.ID, "side")) < 1:
-            time.sleep(1)
-        time.sleep(2)
-        
-        
-        if not len(nav.find_elements(By.XPATH, '//*[@id="app"]/div/span[2]/div/span/div/div/div/div/div/div[1]')) < 1:
-            df.loc[linha, "ENVIADOS"] = str("falhou")
-            updated = (linha, "falhou")
+for linha in df.index:
+    try:
+        ret = enviarMensagem() 
+        if ret == 0:
+            contadorMensagensEnviadas += 1
+            contadorDiario += 1
+            salvaContador(contadorDiario)
             
-            geraLog(df.loc[linha, :].values.flatten().tolist())
-            
+            if contadorDiario >= limiteMensagens:
+                print("Limite de mensagens atingido")
+                break
+
             if linha == len(df.index)-1:
                 print("Fim da lista")
                 break
-                
-            continue
-            
-        nav.find_element(By.XPATH, '//*[@id="main"]/footer/div[1]/div/span[2]/div/div[2]/div[2]/button/span').click()
-        df.loc[linha, "ENVIADOS"] = str("ok")
-        updated = (linha, "ok")
-        
-        geraLog(df.loc[linha, :].values.flatten().tolist())
-        
-        contadorMensagensEnviadas += 1
-        contadorDiario += 1
-        salvaContador(contadorDiario)
 
-        if contadorDiario >= limiteMensagens:
-            print("Limite de mensagens atingido")
+            time.sleep(5)
+        elif ret == -3:
             break
-
-        if linha == len(df.index)-1:
-            print("Fim da lista")
-            break
-
-        # Save the file
-        print("Atualizando planilha...")
-        salvarPlanilha(updated)
-        print("Planilha atualizada!")
-
-        time.sleep(5)
-except Exception as e:
-    print(e)
-    geraLogErro(e)
-    pause("Pressione Enter para finalizar...")
+    except Exception as e:
+        print(e)
+        geraLogErro(e)
+        pause("Pressione Enter para finalizar...")
 
 print()
 if (contadorMensagensEnviadas == 0):
